@@ -27,8 +27,8 @@
   (upper-letter (:/ "A" "Z"))
   (letter (:or lower-letter upper-letter))
   (digit (:/ "0" "9"))
-  (pname (:: upper-letter (:+ letter)))
-  (propvar (:+ letter))
+  (pname (:: upper-letter (:* letter)))
+  (propvar (:: lower-letter (:* letter)))
   (phi (:: "\"" (:+ letter) "\""))
   (number (:+ digit)))
 
@@ -119,19 +119,44 @@
     (tokens value-tokens op-tokens)
     (error (lambda (a b c) (error 'parse-lang "error occured, ~v ~v ~v" a b c)))
     (grammar
-      (form ((PROPVAR) ($1))
-	    ((NOT form) (make-not $2))
-	    ((form AND form) (make-and $1 $3))
-	    ((form OR form) (make-or $1 $3))
-	    ((form IMPLIES form) (make-implies $1 $3))
-	    ((form CONGRUENT form) (make-congruent $1 $3))
-	    ((princ SPEAKSFOR princ) (make-speaksfor $1 $3))
-	    ((princ SAYS form) (make-says $1 $3))
-	    ((princ CONTROLS form) (make-controls $1 $3))
-	    ((princ REPS princ ON PHI) (make-reps $1 $3 $5)))
-      (princ ((PNAME) ($1)) ;pname
-	     ((princ AND princ) (make-and $1 $3))
-	     ((princ OR princ) (make-or $1 $3))))))
+      (form ((comp) $1)
+	    ((princ SPEAKSFOR princ) (make-speaksfor $1 $3)))
+      (comp ((impform) $1)
+	    ((comp CONGRUENT impform) (make-congruent $1 $3)))
+      (impform ((orform) $1)
+	       ((impform IMPLIES orform) (make-implies $1 $3)))
+      (orform ((andform) $1)
+	      ((orform OR andform) (make-or $1 $3)))
+      (andform ((acform) $1)
+	       ((andform AND acform) (make-and $1 $3)))
+      (acform ((negform) $1)
+	      ((princ SAYS negform) (make-says $1 $3))
+	      ((princ CONTROLS negform) (make-controls $1 $3))
+	      ((princ REPS princ ON PHI) (make-reps $1 $3 $5)))
+      (negform ((NOT negform) (make-not $2))
+	       ((simple) $1))
+      (simple ((PROPVAR) $1)
+	      ((OP form CP) $2))
+      (princ ((simprinc) $1)
+	     ((simprinc AND princ) (make-and $1 $3))
+	     ((simprinc OR princ) (make-or $1 $3)))
+      (simprinc ((PNAME) $1)
+		((OP simprinc CP) $2)))))
 
+;(let* ((example "avar & Aprinc says bvar")
+;       (i (open-input-string example)))
+;  (equal? (parse-lang (lambda () (get-token i))) '(AND avar (SAYS Aprinc bvar))))
 
+(define empty-env
+  (lambda (var) (error 'empty-env "variable undefined")))
+
+(define (apply-env env var) (env var))
+
+(define (extend-env env var val)
+  (lambda (var2)
+    (if (eq? var var2)
+      val
+      (env var2))))
+
+(define init-k (lambda (v) v))
 
