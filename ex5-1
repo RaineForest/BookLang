@@ -1,0 +1,8 @@
+Susan says (April controls readfoo)
+Susan says (Bill controls readfoo)
+Susan says (Bill controls writefoo)
+Susan says (Carla controls execfoo)
+Susan controls (April controls readfoo)
+Susan controls (Bill controls readfoo)
+Susan controls (Bill controls writefoo)
+Susan controls (Carla controls execfoo)

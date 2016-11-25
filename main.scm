@@ -1,5 +1,5 @@
 
-#lang racket
+;#lang racket
 
 (require (lib "yacc.ss" "parser-tools")
 	 (lib "lex.ss" "parser-tools")
@@ -164,20 +164,40 @@
 	      ((OP form CP) $2))
       (princ ((simprinc) $1)
 	     ((simprinc CONJUNCTION princ) (make-conjunction $1 $3))
-	     ((simprinc QUOTING princ) (make-or $1 $3)))
+	     ((simprinc QUOTING princ) (make-quoting $1 $3)))
       (simprinc ((PNAME) (make-pname $1))
 		((OP simprinc CP) $2)))))
 
-;(define (to-cnf expr)
-;  (cond ((boolean? expr) expr)
-;	((pname? expr) expr)
-;	((propvar? expr) expr)
-;	((and? expr)
-;	 (cond ((not (and? (cadr expr))) (to-cnf (make-and (to-cnf (cadr expr)) (caddr expr))))
-;	       ((not (and? (caddr expr))) (to-cnf (make-and (cadr expr) (to-cnf (caddr expr)))))
-;	       (else (make-and (cadr expr) (caddr expr)))))
-;	((or? expr)
-;	 (
+(define (to-cnf expr)
+  (cond ((boolean? expr) expr)
+	((pname? expr) expr)
+	((propvar? expr) expr)
+	((says? expr) (make-says (cadr expr) (to-cnf (caddr expr))))
+	((speaksfor? expr) (expr))
+	((quoting? expr) expr)
+	((conjunction? expr) expr)
+	((and? expr)
+	 (make-and (to-cnf (cadr expr)) (to-cnf (caddr expr))))
+	((or? expr)
+	 (cond ((and (and? (cadr expr)) (and? (caddr expr)))
+		(make-and (make-or (to-cnf (cadr (cadr expr))) (to-cnf (caddr (caddr expr)))) 
+			  (make-or (to-cnf (caddr (cadr expr))) (to-cnf (cadr (caddr expr))))))
+	       ((and? (cadr expr)) 
+		(make-and (make-or (to-cnf (cadr (cadr expr))) (to-cnf (caddr expr))) 
+			  (make-or (to-cnf (caddr (cadr expr))) (to-cnf (caddr expr)))))
+	       ((and? (caddr expr))
+		(make-and (make-or (to-cnf (cadr (caddr expr))) (to-cnf (cadr expr)))
+			  (make-or (to-cnf (caddr (caddr expr))) (to-cnf (cadr expr)))))
+	       (else (make-or (to-cnf (cadr expr)) (to-cnf (caddr expr))))))
+	((not? expr)
+	 (cond ((and? (cadr expr))
+		(make-or (to-cnf (make-not (cadr (cadr expr)))) (to-cnf (make-not (caddr (cadr expr))))))
+	       ((or? (cadr expr))
+		(make-and (to-cnf (make-not (cadr (cadr expr)))) (to-cnf (make-not (caddr (cadr expr))))))
+	       ((not? (cadr expr))
+		(to-cnf (cadr (cadr expr))))
+	       (else (make-not (cadr expr)))))))
+
 
 (define (check-statement str)
   (let* ((i (open-input-string str)))
@@ -188,19 +208,7 @@
 ;  (equal? (parse-lang (lambda () (get-token i))) '(AND avar (SAYS Aprinc bvar))))
 
 
-(define (init-kb) (list
-		    ;(make-congruent a (make-says b a))
-		    ;(make-congruent (make-and a (make-implies a b)) b)
-		    (make-implies (make-implies (make-says 'p (make-implies 'a 'b)) (make-implies (make-says 'p 'a) (make-says 'p 'b))) #t)
-		    (make-implies (make-implies (make-speaksfor 'p 'q) (make-implies (make-says 'p 'a) (make-says 'q 'a))) #t)
-		    (make-implies (make-congruent (make-says (make-and 'p 'q) 'a) (make-and (make-says 'p 'a) (make-says 'q 'a))) #t)
-		    (make-implies (make-congruent (make-says (make-quoting 'p 'q) 'a) (make-says 'p (make-says 'q 'a))) #t)
-		    (make-implies (make-speaksfor 'p 'p) #t)))
-
-(define (insert-statement kb new)
-  (cons new kb))
-
-(define init-k (lambda (v) v))
+(define (init-kb) '())
 
 (define (find-vars expr)
   (cond ((pname? expr) (list expr))
@@ -208,7 +216,43 @@
 	((propvar? expr) (list expr))
 	(else (foldl (lambda (x y) (set-union (find-vars x) y)) '() (cdr expr)))))
 
-;(define (substitute exp1 exp2)
+(define (find-clauses expr)
+  (cond ((pname? expr) (list expr))
+	((boolean? expr) (list expr))
+	((propvar? expr) (list expr))
+	((or? expr) (list expr))
+	((not? expr) (list expr))
+	((says? expr) (list expr))
+	((speaksfor? expr) (list expr))
+	((quoting? expr) (list expr))
+	((conjunction? expr) (list expr))
+	(else (foldl (lambda (x y) (set-union (find-clauses x) y)) '() (cdr expr)))))
+
+(define (find-literals expr)
+  (if (or? expr) 
+    (foldl (lambda (x y) (set-union (find-literals x) y)) '() (cdr expr))
+    (list expr)))
+
+(define (insert-statement kb new)
+  (set-union (find-clauses (to-cnf new)) kb))
+
+(define (taut-check expr)
+  (match expr
+	 [(list 'OR x (list 'NOT x)) #t]
+	 [(list 'OR (list 'NOT x) x) #t]
+	 [(list 'AND x x) #t]
+	 [(list 'OR x x) #t]
+	 [expr expr]))
+
+(define (reduce-stmts expr1 expr2)
+  (match (list expr1 expr2)
+	 [(list x (list 'NOT x)) (list)]
+	 [(list (list 'NOT x) x) (list)]
+	 [(list x (list 'OR (list 'NOT x) y)) y]
+	 [(list (list 'OR (list 'NOT x) y) x) y]
+	 [(list expr1 expr2) #f]))
+
+(define init-k (lambda (v) v))
 
 (define (unify expr k)
   (cond ((boolean? expr) (k expr))
@@ -236,13 +280,45 @@
 			       (k (or v1 v2)))))))
 	(else (error 'unify "Unknown expr"))))
 
-(define (query kb q) 
-  (insert-statement kb (check-statement q)))
+(define (iterate-kb kb accum)
+  (if (empty? kb)
+    #f
+    (let ((result (reduce-stmts accum (car kb))))
+      (if result
+        (if (equal? result '())
+	  #t
+	  (iterate-kb (cdr kb) result))
+        (or (iterate-kb (cdr kb) accum) (iterate-kb (cdr kb) (car kb)))))))
 
-(define (access-check filename q)
-    (query 
-      (foldl (lambda (x y) (insert-statement y (check-statement x))) 
-	     (init-kb)
-	     (file->lines filename))
-      q))
+(define (kb-literal-elim kb-ltrls accum)
+  (if (empty? kb-ltrls)
+    accum
+    (let* ((stmt (car kb-ltrls))
+	   (notstmt (to-cnf (make-not stmt)))
+	   (removed (set-intersect (list notstmt) (cdr kb-ltrls))))
+      (if (empty? removed)
+	(kb-literal-elim (cdr kb-ltrls) (cons stmt accum))
+	(kb-literal-elim (set-subtract (cdr kb-ltrls) removed) accum)))))
+
+(define (kb-literals kb accum)
+  (if (empty? kb)
+    accum
+    (kb-literals (cdr kb) (set-union accum (find-literals (car kb))))))
+
+(define (search-kb kb query mygoal)
+  (let ((newkb (insert-statement (insert-statement kb (to-cnf query)) (to-cnf (make-not mygoal)))))
+    (empty? (set-intersect (list query)
+			   (kb-literal-elim (kb-literals newkb '()) '())))))
+   ;(kb-literals newkb '())))
+   ;(iterate-kb (cdr newkb) (car newkb))))
+
+(define (access-check filename user permission)
+  (if (search-kb 
+	(foldr (lambda (x y) (insert-statement y (check-statement x))) 
+	       (init-kb)
+	       (file->lines filename))
+	(check-statement (string-append user " says " permission))
+	(check-statement permission))
+    (display "Granted")
+    (display "Denied")))
 
