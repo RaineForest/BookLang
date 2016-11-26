@@ -132,7 +132,7 @@
 ;(define (reps? a) (and (pair? a) (eq? (car a) 'REPS)))
 
 (define (make-reps a b c)
-  (make-implies (make-says (make-quoting a b) c) (make-says b c)))
+  (make-controls a (make-says b c)))
 
 ;parser / grammar
 (define parse-lang
@@ -172,7 +172,13 @@
   (cond ((boolean? expr) expr)
 	((pname? expr) expr)
 	((propvar? expr) expr)
-	((says? expr) (make-says (cadr expr) (to-cnf (caddr expr))))
+	((says? expr) 
+	 (cond ((quoting? (cadr expr))
+		(make-says (cadr (cadr expr)) (to-cnf (make-says (caddr (cadr expr)) (to-cnf (caddr expr))))))
+	       ((conjunction? (cadr expr))
+		(make-and (make-says (cadr (cadr expr)) (to-cnf (caddr expr))) 
+			  (to-cnf (make-says (caddr (cadr expr)) (to-cnf (caddr expr))))))
+	       (else (make-says (cadr expr) (to-cnf (caddr expr))))))
 	((speaksfor? expr) (expr))
 	((quoting? expr) expr)
 	((conjunction? expr) expr)
@@ -322,3 +328,5 @@
     (display "Granted")
     (display "Denied")))
 
+;(access-check "ex5-1" "Carla" "execfoo")
+;(access-check "ex7-4" "Dawn | Beth" "acceptRafflePrize")
