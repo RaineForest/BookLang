@@ -25,8 +25,6 @@
     CONTROLS
     REPS
     ON
-    TRUE
-    FALSE
     EOF))
 
 (define-lex-abbrevs
@@ -56,16 +54,12 @@
     ("controls" 'CONTROLS)
     ("reps" 'REPS)
     ("on" 'ON)
-    ("true" 'TRUE)
-    ("false" 'FALSE)
     (pname (token-PNAME (string->symbol lexeme)))
     (propvar (token-PROPVAR (string->symbol lexeme)))
     (phi (token-PHI (string->symbol lexeme)))
     (whitespace (get-token input-port))))
 
 ; Identifiers and helpers here
-
-(define ident? symbol?)
 
 (define (not? a) (and (pair? a) (eq? (car a) 'NOT)))
 ;(eq? (not? '(NOT a)) #t)
@@ -74,7 +68,6 @@
 (define (make-not expr)
   (list 'NOT expr))
 ;(equal? (make-not 2) '(NOT 2))
-
 
 (define (and? a) (and (pair? a) (eq? (car a) 'AND)))
 
@@ -159,8 +152,6 @@
       (negform ((NOT negform) (make-not $2))
 	       ((simple) $1))
       (simple ((PROPVAR) (make-propvar $1)) 
-	      ((TRUE) #t) 
-	      ((FALSE) #f)
 	      ((OP form CP) $2))
       (princ ((simprinc) $1)
 	     ((simprinc CONJUNCTION princ) (make-conjunction $1 $3))
@@ -216,12 +207,6 @@
 
 (define (init-kb) '())
 
-(define (find-vars expr)
-  (cond ((pname? expr) (list expr))
-	((boolean? expr) (list expr))
-	((propvar? expr) (list expr))
-	(else (foldl (lambda (x y) (set-union (find-vars x) y)) '() (cdr expr)))))
-
 (define (find-clauses expr)
   (cond ((pname? expr) (list expr))
 	((boolean? expr) (list expr))
@@ -242,60 +227,6 @@
 (define (insert-statement kb new)
   (set-union (find-clauses (to-cnf new)) kb))
 
-(define (taut-check expr)
-  (match expr
-	 [(list 'OR x (list 'NOT x)) #t]
-	 [(list 'OR (list 'NOT x) x) #t]
-	 [(list 'AND x x) #t]
-	 [(list 'OR x x) #t]
-	 [expr expr]))
-
-(define (reduce-stmts expr1 expr2)
-  (match (list expr1 expr2)
-	 [(list x (list 'NOT x)) (list)]
-	 [(list (list 'NOT x) x) (list)]
-	 [(list x (list 'OR (list 'NOT x) y)) y]
-	 [(list (list 'OR (list 'NOT x) y) x) y]
-	 [(list expr1 expr2) #f]))
-
-(define init-k (lambda (v) v))
-
-(define (unify expr k)
-  (cond ((boolean? expr) (k expr))
-	((pname? expr) (k expr))
-	((conjunction? expr) (k expr)) ;pass it through
-	((quoting? expr) (k expr)) ;pass it through
-	((says? expr) (k expr)) ;pass it through
-	((speaksfor? expr) (k expr)) ;pass it through
-	((propvar? expr) (k expr)) ;pass it through, used in substitution
-	((not? expr)
-	 (unify (cadr expr)
-		  (lambda (v1)
-		    (k (not v1)))))
-	((and? expr)
-	 (unify (cadr expr)
-		  (lambda (v1)
-		    (unify (caddr expr)
-			     (lambda (v2)
-			       (k (and v1 v2)))))))
-	((or? expr)
-	 (unify (cadr expr)
-		  (lambda (v1)
-		    (unify (caddr expr)
-			     (lambda (v2)
-			       (k (or v1 v2)))))))
-	(else (error 'unify "Unknown expr"))))
-
-(define (iterate-kb kb accum)
-  (if (empty? kb)
-    #f
-    (let ((result (reduce-stmts accum (car kb))))
-      (if result
-        (if (equal? result '())
-	  #t
-	  (iterate-kb (cdr kb) result))
-        (or (iterate-kb (cdr kb) accum) (iterate-kb (cdr kb) (car kb)))))))
-
 (define (kb-literal-elim kb-ltrls accum)
   (if (empty? kb-ltrls)
     accum
@@ -312,11 +243,11 @@
     (kb-literals (cdr kb) (set-union accum (find-literals (car kb))))))
 
 (define (search-kb kb query mygoal)
-  (let ((newkb (insert-statement (insert-statement kb (to-cnf query)) (to-cnf (make-not mygoal)))))
-    (empty? (set-intersect (list query)
-			   (kb-literal-elim (kb-literals newkb '()) '())))))
-   ;(kb-literals newkb '())))
-   ;(iterate-kb (cdr newkb) (car newkb))))
+  (if (not (says? query))
+    (error 'search-kb "Query must be a says statement! I'm not letting you inject your own facts!")
+    (let ((newkb (insert-statement (insert-statement kb (to-cnf query)) (to-cnf (make-not mygoal)))))
+      (empty? (set-intersect (list query)
+			     (kb-literal-elim (kb-literals newkb '()) '()))))))
 
 (define (access-check filename user permission)
   (if (search-kb 
@@ -330,3 +261,4 @@
 
 ;(access-check "ex5-1" "Carla" "execfoo")
 ;(access-check "ex7-4" "Dawn | Beth" "acceptRafflePrize")
+
