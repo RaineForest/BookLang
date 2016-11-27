@@ -1,4 +1,4 @@
-
+;#! /usr/bin/env racket
 ;#lang racket
 
 (require (lib "yacc.ss" "parser-tools")
@@ -164,36 +164,36 @@
 	((pname? expr) expr)
 	((propvar? expr) expr)
 	((says? expr) 
-	 (cond ((quoting? (cadr expr))
+	 (cond ((quoting? (cadr expr)) ;quoting expansion
 		(make-says (cadr (cadr expr)) (to-cnf (make-says (caddr (cadr expr)) (to-cnf (caddr expr))))))
-	       ((conjunction? (cadr expr))
+	       ((conjunction? (cadr expr)) ;conjunction expansion
 		(make-and (make-says (cadr (cadr expr)) (to-cnf (caddr expr))) 
 			  (to-cnf (make-says (caddr (cadr expr)) (to-cnf (caddr expr))))))
-	       (else (make-says (cadr expr) (to-cnf (caddr expr))))))
+	       (else (make-says (cadr expr) (to-cnf (caddr expr)))))) ;make sure the inner statement is cnf
 	((speaksfor? expr) (expr))
 	((quoting? expr) expr)
 	((conjunction? expr) expr)
-	((and? expr)
+	((and? expr) ;all is right with the world, recurse
 	 (make-and (to-cnf (cadr expr)) (to-cnf (caddr expr))))
 	((or? expr)
-	 (cond ((and (and? (cadr expr)) (and? (caddr expr)))
+	 (cond ((and (and? (cadr expr)) (and? (caddr expr))) ;foil
 		(make-and (make-or (to-cnf (cadr (cadr expr))) (to-cnf (caddr (caddr expr)))) 
 			  (make-or (to-cnf (caddr (cadr expr))) (to-cnf (cadr (caddr expr))))))
-	       ((and? (cadr expr)) 
+	       ((and? (cadr expr)) ;distribution
 		(make-and (make-or (to-cnf (cadr (cadr expr))) (to-cnf (caddr expr))) 
 			  (make-or (to-cnf (caddr (cadr expr))) (to-cnf (caddr expr)))))
-	       ((and? (caddr expr))
+	       ((and? (caddr expr)) ;distribution
 		(make-and (make-or (to-cnf (cadr (caddr expr))) (to-cnf (cadr expr)))
 			  (make-or (to-cnf (caddr (caddr expr))) (to-cnf (cadr expr)))))
-	       (else (make-or (to-cnf (cadr expr)) (to-cnf (caddr expr))))))
+	       (else (make-or (to-cnf (cadr expr)) (to-cnf (caddr expr)))))) ;all is right with the world; recurse
 	((not? expr)
-	 (cond ((and? (cadr expr))
+	 (cond ((and? (cadr expr)) ;demorgans
 		(make-or (to-cnf (make-not (cadr (cadr expr)))) (to-cnf (make-not (caddr (cadr expr))))))
-	       ((or? (cadr expr))
+	       ((or? (cadr expr)) ;demorgans
 		(make-and (to-cnf (make-not (cadr (cadr expr)))) (to-cnf (make-not (caddr (cadr expr))))))
-	       ((not? (cadr expr))
+	       ((not? (cadr expr)) ;double negation
 		(to-cnf (cadr (cadr expr))))
-	       (else (make-not (cadr expr)))))))
+	       (else (make-not (cadr expr))))))) ;all is right with the world; recurse
 
 
 (define (check-statement str)
@@ -205,8 +205,10 @@
 ;  (equal? (parse-lang (lambda () (get-token i))) '(AND avar (SAYS Aprinc bvar))))
 
 
+;initial knowledge base
 (define (init-kb) '())
 
+;find statements separated by ands, so we can split them and insert them as separate statements
 (define (find-clauses expr)
   (cond ((pname? expr) (list expr))
 	((boolean? expr) (list expr))
@@ -219,14 +221,17 @@
 	((conjunction? expr) (list expr))
 	(else (foldl (lambda (x y) (set-union (find-clauses x) y)) '() (cdr expr)))))
 
+;find literals in a clause so we can eliminate opposing statements
 (define (find-literals expr)
   (if (or? expr) 
     (foldl (lambda (x y) (set-union (find-literals x) y)) '() (cdr expr))
     (list expr)))
 
+;add a statement to the knowledge base, set-union for no dups
 (define (insert-statement kb new)
   (set-union (find-clauses (to-cnf new)) kb))
 
+;do the reduction
 (define (kb-literal-elim kb-ltrls accum)
   (if (empty? kb-ltrls)
     accum
@@ -237,11 +242,13 @@
 	(kb-literal-elim (cdr kb-ltrls) (cons stmt accum))
 	(kb-literal-elim (set-subtract (cdr kb-ltrls) removed) accum)))))
 
+;get the all literals in the knowledge base
 (define (kb-literals kb accum)
   (if (empty? kb)
     accum
     (kb-literals (cdr kb) (set-union accum (find-literals (car kb))))))
 
+;set up the resolution
 (define (search-kb kb query mygoal)
   (if (not (says? query))
     (error 'search-kb "Query must be a says statement! I'm not letting you inject your own facts!")
@@ -249,6 +256,7 @@
       (empty? (set-intersect (list query)
 			     (kb-literal-elim (kb-literals newkb '()) '()))))))
 
+;main function
 (define (access-check filename user permission)
   (if (search-kb 
 	(foldr (lambda (x y) (insert-statement y (check-statement x))) 
@@ -259,6 +267,6 @@
     (display "Granted")
     (display "Denied")))
 
-;(access-check "ex5-1" "Carla" "execfoo")
+;(access-check "ex5-1test" "Carla" "execfoo")
 ;(access-check "ex7-4" "Dawn | Beth" "acceptRafflePrize")
 
